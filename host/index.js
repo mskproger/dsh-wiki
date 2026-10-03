@@ -126,10 +126,21 @@ async function runJob(ctx, readPrefs, changeSeqs, job) {
 
   // Changed files for this turn. workspaceChanges.summary() is keyed by the
   // LOG SEQUENCE of the workspace/changes event, not by the turn number — the
-  // event sequence is captured from the session/event feed.
+  // event sequence is captured from the session/event feed. Listener
+  // registration order is not contractual, so wait briefly for the event
+  // when it has not been appended yet.
   const workspaceChanges = ctx.get('workspaceChanges')
-  const seq = changeSeqs.get(job.sessionId)?.findLast?.((entry) => entry.turn === job.turn)?.seq
-    ?? changeSeqs.get(job.sessionId)?.at?.(-1)?.seq
+  let seq
+  if (typeof workspaceChanges?.summary === 'function') {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const entry = changeSeqs.get(job.sessionId)?.findLast?.((item) => item.turn === job.turn)
+      if (entry !== undefined) {
+        seq = entry.seq
+        break
+      }
+      await sleep(250)
+    }
+  }
   const summary = seq !== undefined && typeof workspaceChanges?.summary === 'function'
     ? workspaceChanges.summary(job.sessionId, seq)
     : undefined
