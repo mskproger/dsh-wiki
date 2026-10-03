@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Project Wiki",
+    "description": "Auto-maintained wiki knowledge base for a DeepSeek Harness workspace: rules and the wiki/Home.md index are injected into every session, and one Obsidian-compatible page per completed task is written automatically."
+  }
+}
