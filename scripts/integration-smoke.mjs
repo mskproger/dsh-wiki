@@ -127,8 +127,9 @@ const json = JSON.stringify({
 })
 
 const ctx = makeCtx({ fs: makeFs(), llm: makeLlm(json), workspaceChanges, injected: [] })
-// Real loader shape: volatile Config fields arrive as schemastery refs ({get,set}).
-const volatile = (value) => ({ get: () => value, set: (v) => { value = v } })
+// Real loader shape: volatile Config fields arrive as cosmokit refs —
+// `{ get(), [Symbol()]: set }`, so only `get` is detectable.
+const volatile = (value) => ({ get: () => value, [Symbol('write')]: (v) => { value = v } })
 apply(ctx, { delayMs: volatile(50), timeoutMs: volatile(5000), wikiFolder: volatile('wiki'), language: volatile('ru'), ignorePatterns: volatile(['wiki/**', '*.log']) })
 
 // 1) agent/created: Home.md created + injected

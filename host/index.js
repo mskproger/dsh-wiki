@@ -45,11 +45,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * The loader resolves volatile Config fields into schemastery refs
- * (`{ get(), set() }`), not plain values — unwrap one.
+ * (`{ get(), [write] }` from cosmokit createVolatile — the setter is a Symbol,
+ * so only `get` is detectable), not plain values — unwrap one.
  */
 function unwrapVolatile(value) {
-  if (value !== null && typeof value === 'object'
-    && typeof value.get === 'function' && typeof value.set === 'function') {
+  if (value !== null && typeof value === 'object' && typeof value.get === 'function') {
     try { return value.get() } catch { /* keep the ref on a broken read */ }
   }
   return value
