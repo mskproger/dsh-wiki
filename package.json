@@ -1,0 +1,47 @@
+{
+  "name": "dsh-wiki",
+  "description": "Auto-maintained wiki knowledge base for DeepSeek Harness: injects wiki/Home.md into every session and updates the wiki by itself after each completed task.",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "host/index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mskproger/dsh-wiki.git"
+  },
+  "homepage": "https://github.com/mskproger/dsh-wiki#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "cordis",
+    "wiki",
+    "obsidian",
+    "knowledge-base",
+    "documentation"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.1.7"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./host/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host",
+    "cordis.patch.yml"
+  ]
+}
