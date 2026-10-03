@@ -127,7 +127,9 @@ const json = JSON.stringify({
 })
 
 const ctx = makeCtx({ fs: makeFs(), llm: makeLlm(json), workspaceChanges, injected: [] })
-apply(ctx, { delayMs: 50, timeoutMs: 5000 })
+// Real loader shape: volatile Config fields arrive as schemastery refs ({get,set}).
+const volatile = (value) => ({ get: () => value, set: (v) => { value = v } })
+apply(ctx, { delayMs: volatile(50), timeoutMs: volatile(5000), wikiFolder: volatile('wiki'), language: volatile('ru'), ignorePatterns: volatile(['wiki/**', '*.log']) })
 
 // 1) agent/created: Home.md created + injected
 const created = ctx.listeners.get('agent/created')
@@ -151,8 +153,9 @@ assert.ok(pageText.includes('Тело страницы'), 'page content written'
 const homeAfterTurn = await readFile(join(workspace, 'wiki', 'Home.md'), 'utf8')
 assert.ok(homeAfterTurn.includes('[[Тест-страница]]'), 'Home.md updated with the link')
 
-// 3) system prompt section registered
+// 3) system prompt section registered (text is a live function)
 assert.strictEqual(ctx.get('systemPrompt').__sections.length, 1, 'system prompt section registered')
-assert.ok(ctx.get('systemPrompt').__sections[0].text.includes('wiki'), 'section mentions wiki')
+assert.strictEqual(typeof ctx.get('systemPrompt').__sections[0].text, 'function', 'section text is a function')
+assert.ok(ctx.get('systemPrompt').__sections[0].text().includes('wiki'), 'section mentions wiki')
 
 console.log('integration smoke OK — workspace:', workspace)

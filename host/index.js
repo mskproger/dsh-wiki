@@ -44,6 +44,27 @@ export { Config }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * The loader resolves volatile Config fields into schemastery refs
+ * (`{ get(), set() }`), not plain values — unwrap one.
+ */
+function unwrapVolatile(value) {
+  if (value !== null && typeof value === 'object'
+    && typeof value.get === 'function' && typeof value.set === 'function') {
+    try { return value.get() } catch { /* keep the ref on a broken read */ }
+  }
+  return value
+}
+
+/** Read the loader-supplied config into plain values (volatile refs unwrapped). */
+function normalizeConfig(config) {
+  const out = {}
+  if (config && typeof config === 'object') {
+    for (const [key, value] of Object.entries(config)) out[key] = unwrapVolatile(value)
+  }
+  return out
+}
+
+/**
  * Serialize background jobs per key (one chain per workspace) so two turns
  * never write the wiki of the same project at once.
  */
@@ -60,8 +81,8 @@ function createQueue() {
 }
 
 /** One scheduled wiki-update job. */
-function scheduleJob(ctx, prefs, queue, job) {
-  queue.enqueue(job.cwd, () => runJob(ctx, prefs, job)).catch((error) => {
+function scheduleJob(ctx, readPrefs, queue, job) {
+  queue.enqueue(job.cwd, () => runJob(ctx, readPrefs, job)).catch((error) => {
     ctx.logger?.warn?.(`dsh-wiki: background job failed: ${error?.message ?? error}`)
   })
 }
@@ -81,7 +102,9 @@ function isCwdBusy(ctx, cwd, excludeSessionId) {
   return false
 }
 
-async function runJob(ctx, prefs, job) {
+async function runJob(ctx, readPrefs, job) {
+  // Read the config live: volatile settings change without a plugin reload.
+  const prefs = readPrefs()
   const folder = sanitizeFolder(prefs.wikiFolder)
   const delayMs = clampInt(prefs.delayMs, DEFAULTS.delayMs, 0, 300000)
   if (delayMs > 0) await sleep(delayMs)
@@ -301,19 +324,20 @@ async function ensureWikiHome(fs, cwd, folder) {
  * @param config - profile/config overrides merged by the loader.
  */
 export function apply(ctx, config) {
-  const prefs = { ...DEFAULTS, ...(config ?? {}) }
-  const folder = sanitizeFolder(prefs.wikiFolder)
+  /** Live view of the settings: volatile fields are re-read on every use. */
+  const readPrefs = () => ({ ...DEFAULTS, ...normalizeConfig(config) })
   const queue = createQueue()
 
-  // 1. System prompt: the wiki rules, replacing the AGENTS.md block.
+  // 1. System prompt: the wiki rules, replacing the AGENTS.md block. The text
+  //    is a function so a wikiFolder/language change applies at next assembly.
   try {
     const systemPrompt = ctx.get('systemPrompt')
     if (systemPrompt && typeof systemPrompt.section === 'function') {
-      const order = clampInt(prefs.systemPromptOrder, DEFAULTS.systemPromptOrder, -1000000, 1000000)
+      const order = clampInt(readPrefs().systemPromptOrder, DEFAULTS.systemPromptOrder, -1000000, 1000000)
       systemPrompt.section({
         name: 'dsh-wiki:rules',
         order,
-        text: buildRulesText(prefs),
+        text: () => buildRulesText(readPrefs()),
       })
     }
   } catch (error) {
@@ -322,6 +346,7 @@ export function apply(ctx, config) {
 
   // 2. Inject wiki/Home.md into each session.
   ctx.on('agent/created', async ({ agent }) => {
+    const prefs = readPrefs()
     if (!prefs.injectHome) return
     try {
       const header = agent?.session?.header
@@ -330,6 +355,7 @@ export function apply(ctx, config) {
       if (header.origin === 'subagent' && !prefs.injectSubagents) return
       const fs = ctx.get('fs')
       if (!fs || typeof fs.resolve !== 'function') return
+      const folder = sanitizeFolder(prefs.wikiFolder)
       const homeText = await ensureWikiHome(fs, cwd, folder)
       if (typeof agent.inject !== 'function') return
       agent.inject({
@@ -345,6 +371,7 @@ export function apply(ctx, config) {
 
   // 3. Queue the wiki update when a top-level task is about to finish.
   ctx.on('agent/turn-stopping', ({ agent, turn }) => {
+    const prefs = readPrefs()
     if (!prefs.autoUpdate) return
     try {
       const header = agent?.session?.header
@@ -366,7 +393,7 @@ export function apply(ctx, config) {
         ctx.logger?.warn?.('dsh-wiki: no provider/model resolvable for the wiki writer; skipping auto-update')
         return
       }
-      scheduleJob(ctx, prefs, queue, { cwd, sessionId, turn, provider, model })
+      scheduleJob(ctx, readPrefs, queue, { cwd, sessionId, turn, provider, model })
     } catch (error) {
       ctx.logger?.warn?.(`dsh-wiki: turn-stopping handler failed: ${error?.message ?? error}`)
     }
