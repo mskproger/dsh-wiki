@@ -157,8 +157,8 @@ export function buildWriterSystemPrompt(prefs) {
       ? '- если тема уже описана существующей страницей — обнови её, не плоди дубли;'
       : '- if the theme is already covered by an existing page, update that page instead of duplicating;',
     ru
-      ? '- Home.md: добавь ссылку `[[Имя страницы]]` в раздел «## Страницы», если её ещё нет, и сохрани структуру остального;'
-      : '- Home.md: add the `[[Page name]]` link to the «## Страницы» section if missing, keep the rest of the structure;',
+      ? '- Home.md: добавь строку `- [[Имя страницы]] — краткое описание` В КОНЕЦ раздела «## Страницы» (сразу перед строкой «## См. также»), если такой ссылки ещё нет; остальную структуру Home.md сохрани без изменений;'
+      : '- Home.md: add the line `- [[Page name]] — short description` AT THE END of the «## Страницы» section (right before the «## См. также» line) if the link is missing; keep the rest of Home.md unchanged;',
     ru
       ? '- никаких секретов, паролей, ключей и токенов в вики;'
       : '- never write secrets, passwords, keys or tokens into the wiki;',
