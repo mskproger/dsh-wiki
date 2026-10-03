@@ -81,8 +81,8 @@ function createQueue() {
 }
 
 /** One scheduled wiki-update job. */
-function scheduleJob(ctx, readPrefs, queue, job) {
-  queue.enqueue(job.cwd, () => runJob(ctx, readPrefs, job)).catch((error) => {
+function scheduleJob(ctx, readPrefs, changeSeqs, queue, job) {
+  queue.enqueue(job.cwd, () => runJob(ctx, readPrefs, changeSeqs, job)).catch((error) => {
     ctx.logger?.warn?.(`dsh-wiki: background job failed: ${error?.message ?? error}`)
   })
 }
@@ -102,7 +102,7 @@ function isCwdBusy(ctx, cwd, excludeSessionId) {
   return false
 }
 
-async function runJob(ctx, readPrefs, job) {
+async function runJob(ctx, readPrefs, changeSeqs, job) {
   // Read the config live: volatile settings change without a plugin reload.
   const prefs = readPrefs()
   const folder = sanitizeFolder(prefs.wikiFolder)
@@ -124,10 +124,14 @@ async function runJob(ctx, readPrefs, job) {
   const fs = ctx.get('fs')
   if (!fs || typeof fs.resolve !== 'function') return
 
-  // Changed files for this turn.
+  // Changed files for this turn. workspaceChanges.summary() is keyed by the
+  // LOG SEQUENCE of the workspace/changes event, not by the turn number — the
+  // event sequence is captured from the session/event feed.
   const workspaceChanges = ctx.get('workspaceChanges')
-  const summary = typeof workspaceChanges?.summary === 'function'
-    ? workspaceChanges.summary(job.sessionId, job.turn)
+  const seq = changeSeqs.get(job.sessionId)?.findLast?.((entry) => entry.turn === job.turn)?.seq
+    ?? changeSeqs.get(job.sessionId)?.at?.(-1)?.seq
+  const summary = seq !== undefined && typeof workspaceChanges?.summary === 'function'
+    ? workspaceChanges.summary(job.sessionId, seq)
     : undefined
   if (!summary || !Array.isArray(summary.files) || summary.files.length === 0) {
     ctx.logger?.info?.(`dsh-wiki: no changed files recorded for turn ${job.turn}; nothing to write`)
@@ -157,7 +161,7 @@ async function runJob(ctx, readPrefs, job) {
     for (const { index } of picked) {
       if (budget <= 0) break
       try {
-        const diff = await workspaceChanges.diff(job.sessionId, job.turn, index, abort.signal)
+        const diff = await workspaceChanges.diff(job.sessionId, seq, index, abort.signal)
         if (!diff) continue
         const text = renderDiff(diff).trimEnd()
         if (text === '') continue
@@ -328,6 +332,19 @@ export function apply(ctx, config) {
   const readPrefs = () => ({ ...DEFAULTS, ...normalizeConfig(config) })
   const queue = createQueue()
 
+  // Remember the LOG SEQUENCE of each workspace/changes event per session:
+  // workspaceChanges.summary()/diff() are keyed by that sequence, not the turn.
+  const changeSeqs = new Map()
+  ctx.on('session/event', (session, event) => {
+    try {
+      if (event?.type === 'workspace/changes' && typeof session?.id === 'string' && Number.isInteger(event?.seq)) {
+        const list = changeSeqs.get(session.id) ?? []
+        list.push({ turn: event.data?.turn, seq: event.seq })
+        changeSeqs.set(session.id, list)
+      }
+    } catch { /* never break the event feed */ }
+  })
+
   // 1. System prompt: the wiki rules, replacing the AGENTS.md block. The text
   //    is a function so a wikiFolder/language change applies at next assembly.
   try {
@@ -393,7 +410,7 @@ export function apply(ctx, config) {
         ctx.logger?.warn?.('dsh-wiki: no provider/model resolvable for the wiki writer; skipping auto-update')
         return
       }
-      scheduleJob(ctx, readPrefs, queue, { cwd, sessionId, turn, provider, model })
+      scheduleJob(ctx, readPrefs, changeSeqs, queue, { cwd, sessionId, turn, provider, model })
     } catch (error) {
       ctx.logger?.warn?.(`dsh-wiki: turn-stopping handler failed: ${error?.message ?? error}`)
     }

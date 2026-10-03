@@ -112,7 +112,7 @@ const summary = {
   total: 2,
 }
 const workspaceChanges = {
-  summary: () => summary,
+  summary: (_sid, seq) => (seq === 7 ? summary : undefined),
   diff: async (_sid, _seq, index) => index === 0
     ? { kind: 'text', path: 'src/a.js', display: 'src/a.js', before: true, after: true, hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-console.log(1)', '+console.log(42)'] }] }
     : { kind: 'text', path: 'debug.log', display: 'debug.log', before: true, after: true, hunks: [] },
@@ -141,9 +141,12 @@ assert.ok(homeAfterCreated.includes('# Home —'), 'Home.md skeleton created')
 assert.strictEqual(ctx.injected.length, 1, 'Home.md injected')
 assert.ok(ctx.injected[0].content[0].text.includes('wiki/Home.md'), 'inject text references Home.md')
 
-// 2) agent/turn-stopping: auto-update
+// 2) agent/turn-stopping: auto-update (after the workspace/changes event feed)
 const stopping = ctx.listeners.get('agent/turn-stopping')
 assert.ok(stopping, 'agent/turn-stopping listener registered')
+const feed = ctx.listeners.get('session/event')
+assert.ok(feed, 'session/event listener registered')
+feed({ id: 'session-1' }, { type: 'workspace/changes', seq: 7, data: { turn: 1 } })
 stopping({ agent: fakeAgent(workspace, 'session-1', ctx), turn: 1 })
 await sleep(800)
 
